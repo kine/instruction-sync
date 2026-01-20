@@ -10,10 +10,75 @@ interface InstructionSource {
 const COPILOT_INSTRUCTIONS_PATH = '.github/copilot-instructions.md';
 
 /**
- * Fetches content from a remote URL
+ * Checks if a URL is a GitHub or GitHub Enterprise URL
+ */
+function isGitHubUrl(url: string): { isGitHub: boolean; isEnterprise: boolean } {
+	try {
+		const parsedUrl = new URL(url);
+		const hostname = parsedUrl.hostname.toLowerCase();
+
+		if (hostname === 'github.com' || hostname === 'raw.githubusercontent.com') {
+			return { isGitHub: true, isEnterprise: false };
+		}
+
+		if (hostname.endsWith('.ghe.com') || hostname.endsWith('.github.com')) {
+			return { isGitHub: true, isEnterprise: true };
+		}
+
+		return { isGitHub: false, isEnterprise: false };
+	} catch {
+		return { isGitHub: false, isEnterprise: false };
+	}
+}
+
+/**
+ * Gets GitHub authentication token if available
+ */
+async function getGitHubToken(isEnterprise: boolean): Promise<string | null> {
+	try {
+		// Use the appropriate auth provider based on whether it's enterprise or not
+		const scopes = ['repo'];
+		const authProviderId = isEnterprise ? 'github-enterprise' : 'github';
+
+		const session = await vscode.authentication.getSession(authProviderId, scopes, {
+			createIfNone: false,
+			silent: true
+		});
+
+		if (session) {
+			return session.accessToken;
+		}
+
+		// Try without silent mode if no session found
+		const interactiveSession = await vscode.authentication.getSession(authProviderId, scopes, {
+			createIfNone: false
+		});
+
+		return interactiveSession?.accessToken ?? null;
+	} catch (error) {
+		console.log('GitHub authentication not available:', error);
+		return null;
+	}
+}
+
+/**
+ * Fetches content from a remote URL, using GitHub auth if applicable
  */
 async function fetchRemoteContent(url: string): Promise<string> {
-	const response = await fetch(url);
+	const { isGitHub, isEnterprise } = isGitHubUrl(url);
+
+	const headers: Record<string, string> = {
+		'Accept': 'application/vnd.github.v3.raw'
+	};
+
+	if (isGitHub) {
+		const token = await getGitHubToken(isEnterprise);
+		if (token) {
+			headers['Authorization'] = `Bearer ${token}`;
+		}
+	}
+
+	const response = await fetch(url, { headers });
 	if (!response.ok) {
 		throw new Error(`Failed to fetch from ${url}: ${response.status} ${response.statusText}`);
 	}
