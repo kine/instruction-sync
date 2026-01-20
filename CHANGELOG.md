@@ -4,6 +4,13 @@ All notable changes to the "instruction-sync" extension will be documented in th
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.5] - 2026-01-20
+
+### Changed
+
+- Improved multi-root workspace support: messages now include folder name
+- Clearer confirmation dialogs showing which folder will be affected
+
 ## [0.0.4] - 2026-01-20
 
 ### Added
