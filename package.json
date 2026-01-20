@@ -1,0 +1,121 @@
+{
+  "name": "kine-instruction-sync",
+  "displayName": "Kine's Central Copilot Instruction Sync",
+  "description": "Synchronize centralized GitHub Copilot instructions from remote URLs based on language configuration",
+  "version": "0.0.1",
+  "publisher": "your-publisher-name",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/instruction-sync"
+  },
+  "engines": {
+    "vscode": "^1.108.1"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "copilot",
+    "github copilot",
+    "instructions",
+    "sync",
+    "AI"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "kine-instruction-sync.sync",
+        "title": "Sync Copilot Instructions",
+        "category": "Instruction Sync"
+      },
+      {
+        "command": "kine-instruction-sync.forceSync",
+        "title": "Force Sync Copilot Instructions (Select Source)",
+        "category": "Instruction Sync"
+      },
+      {
+        "command": "kine-instruction-sync.addSource",
+        "title": "Add Instruction Source",
+        "category": "Instruction Sync"
+      }
+    ],
+    "configuration": {
+      "title": "Instruction Sync",
+      "properties": {
+        "instructionSync.sources": {
+          "type": "array",
+          "default": [],
+          "description": "List of instruction sources with language and URL mappings",
+          "items": {
+            "type": "object",
+            "properties": {
+              "language": {
+                "type": "string",
+                "description": "The programming language this source applies to (e.g., 'C#', 'AL', 'TypeScript')"
+              },
+              "url": {
+                "type": "string",
+                "format": "uri",
+                "description": "The URL to fetch the instructions from"
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether this source is enabled"
+              }
+            },
+            "required": [
+              "language",
+              "url"
+            ]
+          }
+        },
+        "instructionSync.syncOnOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically sync instructions when a workspace is opened"
+        },
+        "instructionSync.syncOnConfigChange": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically sync instructions when the configuration changes"
+        },
+        "instructionSync.confirmBeforeSync": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show confirmation dialog before overwriting local instructions"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.108.1",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "typescript-eslint": "^8.52.0",
+    "eslint": "^9.39.2",
+    "esbuild": "^0.27.2",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.9.3",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}
