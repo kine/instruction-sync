@@ -4,7 +4,7 @@ All notable changes to the "instruction-sync" extension will be documented in th
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
-## [0.0.2] - 2026-01-20
+## [0.0.3] - 2026-01-20
 
 ### Added
 
@@ -16,6 +16,12 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 - Destination folder and file are now configured per-language source instead of globally
 - User messages now display the actual configured filename instead of hardcoded path
+
+## [0.0.2] - 2026-01-20
+
+### Added
+
+- Extension icon for marketplace
 
 ## [0.0.1] - 2026-01-20
 

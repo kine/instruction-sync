@@ -119,11 +119,15 @@ The extension can detect the following languages:
 
 ## Release Notes
 
+### 0.0.3
+
+- Per-language destination folder and file settings
+- Confirmation dialog setting
+- Improved user messages to show actual file names
+
 ### 0.0.2
 
-- Added configurable destination folder and file settings
-- Added confirmation dialog setting
-- Improved user messages to show actual file names
+- Added extension icon for marketplace
 
 ### 0.0.1
 
