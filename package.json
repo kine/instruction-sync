@@ -4,6 +4,7 @@
   "description": "Synchronize centralized GitHub Copilot instructions from remote URLs based on language configuration",
   "version": "0.0.1",
   "publisher": "your-publisher-name",
+  "icon": "images/icon.svg",
   "repository": {
     "type": "git",
     "url": "https://github.com/your-username/instruction-sync"

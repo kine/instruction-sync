@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+    <defs>
+        <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#6366F1;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#4338CA;stop-opacity:1" />
+        </linearGradient>
+    </defs>
+
+    <!-- Background rounded square -->
+    <rect x="4" y="4" width="120" height="120" rx="24" ry="24" fill="url(#bgGrad)" />
+
+    <!-- Central sync icon -->
+    <g transform="translate(64, 64)">
+        <!-- Top arrow (download) -->
+        <path d="M 0 -32 L 0 8" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" />
+        <polygon points="0,16 -14,-2 14,-2" fill="#FFFFFF" />
+
+        <!-- Circular arrows around -->
+        <path d="M 28 -10 A 32 32 0 0 1 28 10"
+            stroke="#FFFFFF" stroke-width="6" fill="none" stroke-linecap="round" opacity="0.8" />
+        <polygon points="32,14 22,14 27,24" fill="#FFFFFF" opacity="0.8" />
+
+        <path d="M -28 10 A 32 32 0 0 1 -28 -10"
+            stroke="#FFFFFF" stroke-width="6" fill="none" stroke-linecap="round" opacity="0.8" />
+        <polygon points="-32,-14 -22,-14 -27,-24" fill="#FFFFFF" opacity="0.8" />
+    </g>
+
+    <!-- File/document indicator bottom -->
+    <rect x="44" y="85" width="40" height="28" rx="4" fill="#FFFFFF" opacity="0.95" />
+    <rect x="50" y="92" width="20" height="3" rx="1.5" fill="#6366F1" />
+    <rect x="50" y="99" width="28" height="3" rx="1.5" fill="#A5B4FC" />
+    <rect x="50" y="106" width="24" height="3" rx="1.5" fill="#A5B4FC" />
+</svg>
