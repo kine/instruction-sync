@@ -28,6 +28,8 @@ An array of instruction sources. Each source has:
 - `language`: The programming language (e.g., "C#", "AL", "TypeScript")
 - `url`: The URL to fetch instructions from
 - `enabled`: Whether this source is active (default: true)
+- `destinationFolder`: The folder where the instructions file will be created (default: ".github")
+- `destinationFile`: The name of the instructions file (default: "copilot-instructions.md")
 
 Example configuration:
 
@@ -42,7 +44,9 @@ Example configuration:
     {
       "language": "AL",
       "url": "https://raw.githubusercontent.com/your-org/standards/main/copilot-instructions-al.md",
-      "enabled": true
+      "enabled": true,
+      "destinationFolder": ".vscode",
+      "destinationFile": "al-instructions.md"
     },
     {
       "language": "TypeScript",
@@ -64,6 +68,12 @@ Example configuration:
 - Type: `boolean`
 - Default: `false`
 - Automatically sync instructions when the configuration changes
+
+### `instructionSync.confirmBeforeSync`
+
+- Type: `boolean`
+- Default: `true`
+- Show confirmation dialog before overwriting local instructions
 
 ## Commands
 
@@ -108,6 +118,12 @@ The extension can detect the following languages:
 - Network access to the configured instruction URLs
 
 ## Release Notes
+
+### 0.0.2
+
+- Added configurable destination folder and file settings
+- Added confirmation dialog setting
+- Improved user messages to show actual file names
 
 ### 0.0.1
 

@@ -68,6 +68,16 @@
                 "type": "boolean",
                 "default": true,
                 "description": "Whether this source is enabled"
+              },
+              "destinationFolder": {
+                "type": "string",
+                "default": ".github",
+                "description": "The folder where the instructions file will be created (relative to workspace root)"
+              },
+              "destinationFile": {
+                "type": "string",
+                "default": "copilot-instructions.md",
+                "description": "The name of the instructions file"
               }
             },
             "required": [

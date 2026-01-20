@@ -5,9 +5,22 @@ interface InstructionSource {
 	language: string;
 	url: string;
 	enabled?: boolean;
+	destinationFolder?: string;
+	destinationFile?: string;
 }
 
-const COPILOT_INSTRUCTIONS_PATH = '.github/copilot-instructions.md';
+/**
+ * Gets the destination path for the instructions file from source configuration
+ */
+function getDestinationPath(source?: InstructionSource): { folder: string; file: string; fullPath: string } {
+	const folder = source?.destinationFolder ?? '.github';
+	const file = source?.destinationFile ?? 'copilot-instructions.md';
+	return {
+		folder,
+		file,
+		fullPath: `${folder}/${file}`
+	};
+}
 
 /**
  * Checks if a URL is a GitHub or GitHub Enterprise URL
@@ -86,10 +99,11 @@ async function fetchRemoteContent(url: string): Promise<string> {
 }
 
 /**
- * Gets the current content of the local copilot-instructions.md file
+ * Gets the current content of the local instructions file
  */
-async function getLocalInstructions(workspaceFolder: vscode.WorkspaceFolder): Promise<string | null> {
-	const instructionsUri = vscode.Uri.joinPath(workspaceFolder.uri, COPILOT_INSTRUCTIONS_PATH);
+async function getLocalInstructions(workspaceFolder: vscode.WorkspaceFolder, source: InstructionSource): Promise<string | null> {
+	const { fullPath } = getDestinationPath(source);
+	const instructionsUri = vscode.Uri.joinPath(workspaceFolder.uri, fullPath);
 	try {
 		const content = await vscode.workspace.fs.readFile(instructionsUri);
 		return Buffer.from(content).toString('utf8');
@@ -99,15 +113,16 @@ async function getLocalInstructions(workspaceFolder: vscode.WorkspaceFolder): Pr
 }
 
 /**
- * Writes content to the local copilot-instructions.md file
+ * Writes content to the local instructions file
  */
-async function writeLocalInstructions(workspaceFolder: vscode.WorkspaceFolder, content: string): Promise<void> {
-	const githubFolderUri = vscode.Uri.joinPath(workspaceFolder.uri, '.github');
-	const instructionsUri = vscode.Uri.joinPath(workspaceFolder.uri, COPILOT_INSTRUCTIONS_PATH);
+async function writeLocalInstructions(workspaceFolder: vscode.WorkspaceFolder, content: string, source: InstructionSource): Promise<void> {
+	const { folder, fullPath } = getDestinationPath(source);
+	const destinationFolderUri = vscode.Uri.joinPath(workspaceFolder.uri, folder);
+	const instructionsUri = vscode.Uri.joinPath(workspaceFolder.uri, fullPath);
 
-	// Ensure .github directory exists
+	// Ensure destination directory exists
 	try {
-		await vscode.workspace.fs.createDirectory(githubFolderUri);
+		await vscode.workspace.fs.createDirectory(destinationFolderUri);
 	} catch {
 		// Directory may already exist
 	}
@@ -163,7 +178,7 @@ async function syncInstructions(
 ): Promise<boolean> {
 	try {
 		const remoteContent = await fetchRemoteContent(source.url);
-		const localContent = await getLocalInstructions(workspaceFolder);
+		const localContent = await getLocalInstructions(workspaceFolder, source);
 
 		if (localContent !== remoteContent) {
 			// Check if confirmation is required
@@ -173,7 +188,8 @@ async function syncInstructions(
 
 				if (confirmBeforeSync) {
 					const action = localContent === null ? 'create' : 'overwrite';
-					const message = `Instruction Sync: ${action === 'create' ? 'Create' : 'Overwrite'} copilot-instructions.md with ${source.language} instructions from remote?`;
+					const { file } = getDestinationPath(source);
+					const message = `Instruction Sync: ${action === 'create' ? 'Create' : 'Overwrite'} ${file} with ${source.language} instructions from remote?`;
 
 					const result = await vscode.window.showWarningMessage(
 						message,
@@ -193,10 +209,11 @@ async function syncInstructions(
 				}
 			}
 
-			await writeLocalInstructions(workspaceFolder, remoteContent);
+			await writeLocalInstructions(workspaceFolder, remoteContent, source);
 			if (showNotifications) {
+				const { file } = getDestinationPath(source);
 				vscode.window.showInformationMessage(
-					`Instruction Sync: Updated copilot-instructions.md from ${source.language} configuration`
+					`Instruction Sync: Updated ${file} from ${source.language} configuration`
 				);
 			}
 			return true;
