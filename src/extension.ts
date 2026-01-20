@@ -231,7 +231,8 @@ async function syncInstructions(
 				if (confirmBeforeSync) {
 					const action = localContent === null ? 'create' : 'overwrite';
 					const { file } = getDestinationPath(source);
-					const message = `Instruction Sync: ${action === 'create' ? 'Create' : 'Overwrite'} ${file} with ${source.language} instructions from remote?`;
+					const folderName = workspaceFolder.name;
+					const message = `Instruction Sync: ${action === 'create' ? 'Create' : 'Overwrite'} ${file} in "${folderName}" with ${source.language} instructions?`;
 
 					const result = await vscode.window.showWarningMessage(
 						message,
@@ -254,23 +255,26 @@ async function syncInstructions(
 			await writeLocalInstructions(workspaceFolder, remoteContent, source);
 			if (showNotifications) {
 				const { file } = getDestinationPath(source);
+				const folderName = workspaceFolder.name;
 				vscode.window.showInformationMessage(
-					`Instruction Sync: Updated ${file} from ${source.language} configuration`
+					`Instruction Sync: Updated ${file} in "${folderName}" from ${source.language} configuration`
 				);
 			}
 			return true;
 		} else {
 			if (showNotifications) {
+				const folderName = workspaceFolder.name;
 				vscode.window.showInformationMessage(
-					`Instruction Sync: Instructions are already up to date for ${source.language}`
+					`Instruction Sync: Instructions are already up to date for ${source.language} in "${folderName}"`
 				);
 			}
 			return false;
 		}
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error);
+		const folderName = workspaceFolder.name;
 		vscode.window.showErrorMessage(
-			`Instruction Sync: Failed to sync instructions for ${source.language}: ${errorMessage}`
+			`Instruction Sync: Failed to sync instructions for ${source.language} in "${folderName}": ${errorMessage}`
 		);
 		return false;
 	}
