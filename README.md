@@ -111,6 +111,7 @@ The extension can detect the following languages:
 - PHP
 - Swift
 - Kotlin
+- Powershell
 
 ## Usage Example
 

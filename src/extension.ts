@@ -192,6 +192,7 @@ async function detectWorkspaceLanguage(workspaceFolder: vscode.WorkspaceFolder):
 		'PHP': ['**/*.php'],
 		'Swift': ['**/*.swift'],
 		'Kotlin': ['**/*.kt'],
+		'Powershell': ['**/*.ps1']
 	};
 
 	for (const [language, patterns] of Object.entries(languagePatterns)) {
