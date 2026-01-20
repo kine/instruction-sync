@@ -2,7 +2,7 @@
   "name": "kine-instruction-sync",
   "displayName": "Kine's Central Copilot Instruction Sync",
   "description": "Synchronize centralized GitHub Copilot instructions from remote URLs based on language configuration",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "Kine",
   "icon": "images/icon.png",
   "repository": {
