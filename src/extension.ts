@@ -45,6 +45,30 @@ function isGitHubUrl(url: string): { isGitHub: boolean; isEnterprise: boolean } 
 }
 
 /**
+ * Checks if a URL is an Azure DevOps URL
+ */
+function isAzureDevOpsUrl(url: string): boolean {
+	try {
+		const parsedUrl = new URL(url);
+		const hostname = parsedUrl.hostname.toLowerCase();
+
+		// Azure DevOps Services
+		if (hostname === 'dev.azure.com' || hostname.endsWith('.visualstudio.com')) {
+			return true;
+		}
+
+		// Azure DevOps Server (on-premises) - check for common patterns
+		if (parsedUrl.pathname.includes('/_apis/') || parsedUrl.pathname.includes('/_git/')) {
+			return true;
+		}
+
+		return false;
+	} catch {
+		return false;
+	}
+}
+
+/**
  * Gets GitHub authentication token if available
  */
 async function getGitHubToken(isEnterprise: boolean): Promise<string | null> {
@@ -70,6 +94,36 @@ async function getGitHubToken(isEnterprise: boolean): Promise<string | null> {
 		return interactiveSession?.accessToken ?? null;
 	} catch (error) {
 		console.log('GitHub authentication not available:', error);
+		return null;
+	}
+}
+
+/**
+ * Gets Azure DevOps authentication token if available
+ */
+async function getAzureDevOpsToken(): Promise<string | null> {
+	try {
+		// Azure DevOps uses Microsoft authentication provider
+		// The scope for Azure DevOps API access
+		const scopes = ['499b84ac-1321-427f-aa17-267ca6975798/.default'];
+
+		const session = await vscode.authentication.getSession('microsoft', scopes, {
+			createIfNone: false,
+			silent: true
+		});
+
+		if (session) {
+			return session.accessToken;
+		}
+
+		// Try without silent mode if no session found
+		const interactiveSession = await vscode.authentication.getSession('microsoft', scopes, {
+			createIfNone: false
+		});
+
+		return interactiveSession?.accessToken ?? null;
+	} catch (error) {
+		console.log('Azure DevOps authentication not available:', error);
 		return null;
 	}
 }
@@ -104,6 +158,61 @@ function localPathToUri(source: string): vscode.Uri {
 }
 
 /**
+ * Validates that the fetched content looks like valid Markdown instructions
+ * and not an error page or unexpected content
+ */
+function isValidInstructionContent(content: string, source: string): { valid: boolean; reason?: string } {
+	// Check for empty content
+	if (!content || content.trim().length === 0) {
+		return { valid: false, reason: 'Empty content received' };
+	}
+
+	// Check for common HTML error page indicators (case-insensitive)
+	const lowerContent = content.toLowerCase();
+	const htmlErrorIndicators = [
+		'<!doctype html',
+		'<html',
+		'<head>',
+		'<title>404',
+		'<title>401',
+		'<title>403',
+		'<title>500',
+		'page not found',
+		'access denied',
+		'unauthorized',
+		'sign in to',
+		'login required'
+	];
+
+	// If the content starts with typical HTML indicators, it's likely an error page
+	const trimmedLower = lowerContent.trim();
+	if (trimmedLower.startsWith('<!doctype') || trimmedLower.startsWith('<html')) {
+		// Check if it contains error indicators
+		for (const indicator of htmlErrorIndicators) {
+			if (lowerContent.includes(indicator)) {
+				return { valid: false, reason: 'Received HTML error page instead of instructions content' };
+			}
+		}
+		// Even without explicit error indicators, HTML content is suspicious for a .md file
+		return { valid: false, reason: 'Received HTML content instead of Markdown instructions' };
+	}
+
+	// Check for GitHub-specific error responses (JSON format)
+	if (trimmedLower.startsWith('{')) {
+		try {
+			const json = JSON.parse(content);
+			if (json.message || json.error || json.errors) {
+				return { valid: false, reason: `API error: ${json.message || json.error || 'Unknown error'}` };
+			}
+		} catch {
+			// Not valid JSON, could still be valid content
+		}
+	}
+
+	return { valid: true };
+}
+
+/**
  * Fetches content from a URL or local file path
  */
 async function fetchContent(source: string): Promise<string> {
@@ -120,13 +229,19 @@ async function fetchContent(source: string): Promise<string> {
 
 	// Handle remote URLs
 	const { isGitHub, isEnterprise } = isGitHubUrl(source);
+	const isAzureDevOps = isAzureDevOpsUrl(source);
 
-	const headers: Record<string, string> = {
-		'Accept': 'application/vnd.github.v3.raw'
-	};
+	const headers: Record<string, string> = {};
 
 	if (isGitHub) {
+		headers['Accept'] = 'application/vnd.github.v3.raw';
 		const token = await getGitHubToken(isEnterprise);
+		if (token) {
+			headers['Authorization'] = `Bearer ${token}`;
+		}
+	} else if (isAzureDevOps) {
+		headers['Accept'] = 'text/plain';
+		const token = await getAzureDevOpsToken();
 		if (token) {
 			headers['Authorization'] = `Bearer ${token}`;
 		}
@@ -136,7 +251,16 @@ async function fetchContent(source: string): Promise<string> {
 	if (!response.ok) {
 		throw new Error(`Failed to fetch from ${source}: ${response.status} ${response.statusText}`);
 	}
-	return await response.text();
+
+	const content = await response.text();
+
+	// Validate the content to ensure it's not an error page
+	const validation = isValidInstructionContent(content, source);
+	if (!validation.valid) {
+		throw new Error(`Invalid content from ${source}: ${validation.reason}`);
+	}
+
+	return content;
 }
 
 /**
