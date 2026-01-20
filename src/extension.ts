@@ -172,13 +172,13 @@ async function writeLocalInstructions(workspaceFolder: vscode.WorkspaceFolder, c
 }
 
 /**
- * Detects the primary language of the workspace based on file extensions
+ * Detects the primary language of the workspace based on file extensions and project files
  */
 async function detectWorkspaceLanguage(workspaceFolder: vscode.WorkspaceFolder): Promise<string[]> {
 	const detectedLanguages: string[] = [];
 
 	const languagePatterns: { [key: string]: string[] } = {
-		'AL': ['**/*.al'],
+		'AL': ['**/*.al', 'app.json'],
 		'C#': ['**/*.cs', '**/*.csproj'],
 		'TypeScript': ['**/*.ts', '**/*.tsx'],
 		'JavaScript': ['**/*.js', '**/*.jsx'],
