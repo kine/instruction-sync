@@ -100,32 +100,73 @@ async function getGitHubToken(isEnterprise: boolean): Promise<string | null> {
 
 /**
  * Gets Azure DevOps authentication token if available
+ * Tries multiple authentication providers and scope formats
  */
 async function getAzureDevOpsToken(): Promise<string | null> {
-	try {
-		// Azure DevOps uses Microsoft authentication provider
-		// The scope for Azure DevOps API access
-		const scopes = ['499b84ac-1321-427f-aa17-267ca6975798/.default'];
+	// Azure DevOps resource ID: 499b84ac-1321-427f-aa17-267ca6975798
+	// Azure DevOps resource URI: https://app.vssps.visualstudio.com
 
-		const session = await vscode.authentication.getSession('microsoft', scopes, {
-			createIfNone: false,
-			silent: true
-		});
+	// List of authentication providers and scopes to try
+	const authAttempts: { providerId: string; scopes: string[]; description: string }[] = [
+		// Try Azure Repos extension's authentication provider if available
+		{ providerId: 'microsoft', scopes: ['https://management.core.windows.net/.default'], description: 'Azure management' },
+		// Standard Azure DevOps scope via Microsoft provider
+		{ providerId: 'microsoft', scopes: ['https://app.vssps.visualstudio.com/.default'], description: 'Azure DevOps VSSPS' },
+		// Resource ID format
+		{ providerId: 'microsoft', scopes: ['499b84ac-1321-427f-aa17-267ca6975798/.default'], description: 'Azure DevOps Resource ID' },
+		// User impersonation scope
+		{ providerId: 'microsoft', scopes: ['499b84ac-1321-427f-aa17-267ca6975798/user_impersonation'], description: 'Azure DevOps User Impersonation' },
+	];
 
-		if (session) {
-			return session.accessToken;
+	for (const attempt of authAttempts) {
+		try {
+			const session = await vscode.authentication.getSession(attempt.providerId, attempt.scopes, {
+				createIfNone: false,
+				silent: true
+			});
+
+			if (session) {
+				console.log(`Azure DevOps auth succeeded with ${attempt.description}`);
+				return session.accessToken;
+			}
+		} catch (e) {
+			// Try next authentication method
+			console.log(`Azure DevOps auth failed with ${attempt.description}:`, e);
 		}
-
-		// Try without silent mode if no session found
-		const interactiveSession = await vscode.authentication.getSession('microsoft', scopes, {
-			createIfNone: false
-		});
-
-		return interactiveSession?.accessToken ?? null;
-	} catch (error) {
-		console.log('Azure DevOps authentication not available:', error);
-		return null;
 	}
+
+	// Try non-silent mode with the most commonly supported scope
+	try {
+		const interactiveSession = await vscode.authentication.getSession(
+			'microsoft',
+			['https://app.vssps.visualstudio.com/.default'],
+			{ createIfNone: false }
+		);
+
+		if (interactiveSession) {
+			return interactiveSession.accessToken;
+		}
+	} catch (error) {
+		console.log('Azure DevOps interactive authentication failed:', error);
+	}
+
+	// Try with Azure management scope as fallback (some orgs may have this configured)
+	try {
+		const azureSession = await vscode.authentication.getSession(
+			'microsoft',
+			['https://management.azure.com/.default'],
+			{ createIfNone: false, silent: true }
+		);
+
+		if (azureSession) {
+			console.log('Using Azure management token for Azure DevOps');
+			return azureSession.accessToken;
+		}
+	} catch (error) {
+		console.log('Azure management authentication failed:', error);
+	}
+
+	return null;
 }
 
 /**
