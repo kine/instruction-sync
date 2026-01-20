@@ -3,12 +3,13 @@
   "displayName": "Kine's Central Copilot Instruction Sync",
   "description": "Synchronize centralized GitHub Copilot instructions from remote URLs based on language configuration",
   "version": "0.0.1",
-  "publisher": "your-publisher-name",
-  "icon": "images/icon.svg",
+  "publisher": "Kine",
+  "icon": "images/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/instruction-sync"
+    "url": "https://github.com/kine/instruction-sync"
   },
+  "license": "GPL-3.0-only",
   "engines": {
     "vscode": "^1.108.1"
   },
