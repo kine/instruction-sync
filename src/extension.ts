@@ -75,10 +75,51 @@ async function getGitHubToken(isEnterprise: boolean): Promise<string | null> {
 }
 
 /**
- * Fetches content from a remote URL, using GitHub auth if applicable
+ * Checks if the source is a local file path
  */
-async function fetchRemoteContent(url: string): Promise<string> {
-	const { isGitHub, isEnterprise } = isGitHubUrl(url);
+function isLocalPath(source: string): boolean {
+	// Check for file:// URI scheme
+	if (source.startsWith('file://')) {
+		return true;
+	}
+	// Check for Windows absolute path (e.g., C:\path or C:/path)
+	if (/^[a-zA-Z]:[\\/]/.test(source)) {
+		return true;
+	}
+	// Check for Unix absolute path
+	if (source.startsWith('/') && !source.startsWith('//')) {
+		return true;
+	}
+	return false;
+}
+
+/**
+ * Converts a local path to a VS Code URI
+ */
+function localPathToUri(source: string): vscode.Uri {
+	if (source.startsWith('file://')) {
+		return vscode.Uri.parse(source);
+	}
+	return vscode.Uri.file(source);
+}
+
+/**
+ * Fetches content from a URL or local file path
+ */
+async function fetchContent(source: string): Promise<string> {
+	// Handle local file paths
+	if (isLocalPath(source)) {
+		try {
+			const uri = localPathToUri(source);
+			const content = await vscode.workspace.fs.readFile(uri);
+			return Buffer.from(content).toString('utf8');
+		} catch (error) {
+			throw new Error(`Failed to read local file ${source}: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
+	// Handle remote URLs
+	const { isGitHub, isEnterprise } = isGitHubUrl(source);
 
 	const headers: Record<string, string> = {
 		'Accept': 'application/vnd.github.v3.raw'
@@ -91,9 +132,9 @@ async function fetchRemoteContent(url: string): Promise<string> {
 		}
 	}
 
-	const response = await fetch(url, { headers });
+	const response = await fetch(source, { headers });
 	if (!response.ok) {
-		throw new Error(`Failed to fetch from ${url}: ${response.status} ${response.statusText}`);
+		throw new Error(`Failed to fetch from ${source}: ${response.status} ${response.statusText}`);
 	}
 	return await response.text();
 }
@@ -177,7 +218,7 @@ async function syncInstructions(
 	requireConfirmation: boolean = true
 ): Promise<boolean> {
 	try {
-		const remoteContent = await fetchRemoteContent(source.url);
+		const remoteContent = await fetchContent(source.url);
 		const localContent = await getLocalInstructions(workspaceFolder, source);
 
 		if (localContent !== remoteContent) {

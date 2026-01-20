@@ -1,11 +1,12 @@
 # Kine's Central Copilot Instruction Sync
 
-Synchronize centralized GitHub Copilot instructions from remote URLs based on programming language configuration. Keep your team's Copilot instructions consistent across all repositories by fetching them from a central source.
+Synchronize centralized GitHub Copilot instructions from remote URLs or local files based on programming language configuration. Keep your team's Copilot instructions consistent across all repositories by fetching them from a central source.
 
 ## Features
 
 - **Automatic Language Detection**: Detects the programming language of your workspace (C#, AL, TypeScript, Python, and many more)
 - **URL-Based Instructions**: Fetch Copilot instructions from any accessible URL (GitHub raw files, internal servers, etc.)
+- **Local File Support**: Use local file paths as instruction sources (useful for shared network drives or local development)
 - **Multi-Language Support**: Configure different instruction sources for different programming languages
 - **Automatic Sync on Open**: Optionally sync instructions when you open a workspace
 - **Manual Sync Commands**: Sync instructions on-demand via command palette
@@ -26,10 +27,17 @@ This extension contributes the following settings:
 An array of instruction sources. Each source has:
 
 - `language`: The programming language (e.g., "C#", "AL", "TypeScript")
-- `url`: The URL to fetch instructions from
+- `url`: The URL or local file path to fetch instructions from
 - `enabled`: Whether this source is active (default: true)
 - `destinationFolder`: The folder where the instructions file will be created (default: ".github")
 - `destinationFile`: The name of the instructions file (default: "copilot-instructions.md")
+
+**Supported source formats:**
+
+- Remote URLs: `https://example.com/instructions.md`
+- Local Windows paths: `C:\shared\instructions.md`
+- Local Unix paths: `/shared/instructions.md`
+- File URIs: `file:///C:/shared/instructions.md`
 
 Example configuration:
 
@@ -118,6 +126,11 @@ The extension can detect the following languages:
 - Network access to the configured instruction URLs
 
 ## Release Notes
+
+### 0.0.4
+
+- Added support for local file paths as instruction sources
+- Supports Windows paths, Unix paths, and file:// URIs
 
 ### 0.0.3
 

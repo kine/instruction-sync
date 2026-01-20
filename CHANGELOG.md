@@ -4,6 +4,15 @@ All notable changes to the "instruction-sync" extension will be documented in th
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.4] - 2026-01-20
+
+### Added
+
+- Support for local file paths as instruction sources
+- Supports Windows paths (e.g., `C:\shared\instructions.md`)
+- Supports Unix paths (e.g., `/shared/instructions.md`)
+- Supports file:// URIs (e.g., `file:///C:/shared/instructions.md`)
+
 ## [0.0.3] - 2026-01-20
 
 ### Added
