@@ -128,6 +128,10 @@ The extension can detect the following languages:
 
 ## Release Notes
 
+### 0.0.6
+
+- Extended AL language detection to also detect `app.json` in root folder
+
 ### 0.0.5
 
 - Improved multi-root workspace support with folder names in messages

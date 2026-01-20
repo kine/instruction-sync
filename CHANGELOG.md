@@ -4,6 +4,12 @@ All notable changes to the "instruction-sync" extension will be documented in th
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.6] - 2026-01-20
+
+### Changed
+
+- Extended AL language detection to also detect `app.json` in root folder
+
 ## [0.0.5] - 2026-01-20
 
 ### Changed
