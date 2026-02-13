@@ -8,15 +8,18 @@ Synchronize centralized GitHub Copilot instructions from remote URLs or local fi
 - **URL-Based Instructions**: Fetch Copilot instructions from any accessible URL (GitHub raw files, internal servers, etc.)
 - **Local File Support**: Use local file paths as instruction sources (useful for shared network drives or local development)
 - **Multi-Language Support**: Configure different instruction sources for different programming languages
+- **Multiple Files per Language**: Sync multiple instruction files for a single language to different destinations
 - **Automatic Sync on Open**: Optionally sync instructions when you open a workspace
 - **Manual Sync Commands**: Sync instructions on-demand via command palette
+- **Flexible Confirmation**: Confirm individually, "Yes to All" for the current session, or disable permanently
 
 ## How It Works
 
 1. When a workspace is opened, the extension detects the programming languages used
 2. It checks your configured instruction sources for a matching language
-3. If the remote instructions differ from local `.github/copilot-instructions.md`, they are synchronized
-4. Your team's centralized Copilot instructions are now available in your workspace
+3. All matching sources are synced — you can define multiple files per language with different destinations
+4. If the remote instructions differ from the local file, they are synchronized
+5. Your team's centralized Copilot instructions are now available in your workspace
 
 ## Extension Settings
 
@@ -65,6 +68,35 @@ Example configuration:
 }
 ```
 
+#### Multiple files per language
+
+You can define multiple sources for the same language, each with a different destination file:
+
+```json
+{
+  "instructionSync.sources": [
+    {
+      "language": "C#",
+      "url": "https://example.com/csharp-general.md",
+      "destinationFile": "copilot-instructions.md"
+    },
+    {
+      "language": "C#",
+      "url": "https://example.com/csharp-testing.md",
+      "destinationFile": "copilot-testing-instructions.md"
+    },
+    {
+      "language": "C#",
+      "url": "https://example.com/csharp-architecture.md",
+      "destinationFolder": ".vscode",
+      "destinationFile": "copilot-architecture.md"
+    }
+  ]
+}
+```
+
+Each source is uniquely identified by the combination of `language` + destination path. When merging remote and local configurations, a local source overrides a remote source only if both the language and destination path match.
+
 ### `instructionSync.syncOnOpen`
 
 - Type: `boolean`
@@ -82,6 +114,7 @@ Example configuration:
 - Type: `boolean`
 - Default: `true`
 - Show confirmation dialog before overwriting local instructions
+- When multiple files are being synced, the confirmation dialog offers **"Yes to All"** to approve all remaining files in the current sync session
 
 ## Commands
 
@@ -127,6 +160,11 @@ The extension can detect the following languages:
 - Network access to the configured instruction URLs
 
 ## Release Notes
+
+### 0.0.10
+
+- Support multiple instruction sources per language with different destination files
+- Added "Yes to All" option in confirmation dialog for batch sync sessions
 
 ### 0.0.6
 

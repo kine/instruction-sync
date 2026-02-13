@@ -19,6 +19,11 @@ interface RemoteConfig {
 /** In-memory cache for remote configuration */
 let remoteConfigCache: { config: RemoteConfig; timestamp: number } | null = null;
 
+/** Tracks per-sync-session state (e.g. "Yes to All") */
+interface SyncSession {
+	confirmAll: boolean;
+}
+
 /**
  * Gets the destination path for the instructions file from source configuration
  */
@@ -367,7 +372,8 @@ async function syncInstructions(
 	workspaceFolder: vscode.WorkspaceFolder,
 	source: InstructionSource,
 	showNotifications: boolean = true,
-	requireConfirmation: boolean = true
+	requireConfirmation: boolean = true,
+	session?: SyncSession
 ): Promise<boolean> {
 	try {
 		const remoteContent = await fetchContent(source.url);
@@ -375,7 +381,7 @@ async function syncInstructions(
 
 		if (localContent !== remoteContent) {
 			// Check if confirmation is required
-			if (requireConfirmation) {
+			if (requireConfirmation && !session?.confirmAll) {
 				const config = vscode.workspace.getConfiguration('instructionSync');
 				const confirmBeforeSync = config.get<boolean>('confirmBeforeSync', true);
 
@@ -389,12 +395,17 @@ async function syncInstructions(
 						message,
 						{ modal: false },
 						'Yes',
+						'Yes to All',
 						'No',
 						'Always (disable confirmation)'
 					);
 
 					if (result === 'No' || result === undefined) {
 						return false;
+					}
+
+					if (result === 'Yes to All' && session) {
+						session.confirmAll = true;
 					}
 
 					if (result === 'Always (disable confirmation)') {
@@ -504,7 +515,7 @@ async function fetchRemoteConfig(forceRefresh: boolean = false): Promise<RemoteC
 /**
  * Gets the merged instruction sources from both remote and local configuration.
  * Remote sources are fetched first, then local sources are appended.
- * Local sources can override remote ones for the same language.
+ * Local sources can override remote ones for the same language + destination combination.
  */
 async function getInstructionSources(forceRefresh: boolean = false): Promise<InstructionSource[]> {
 	const localSources = getLocalInstructionSources();
@@ -518,15 +529,20 @@ async function getInstructionSources(forceRefresh: boolean = false): Promise<Ins
 		return remoteConfig.sources;
 	}
 
-	// Merge: local sources override remote sources for the same language
+	// Merge: local sources override remote sources for the same language + destination
 	const merged = new Map<string, InstructionSource>();
 
+	const sourceKey = (s: InstructionSource) => {
+		const { fullPath } = getDestinationPath(s);
+		return `${s.language.toLowerCase()}::${fullPath}`;
+	};
+
 	for (const source of remoteConfig.sources) {
-		merged.set(source.language.toLowerCase(), source);
+		merged.set(sourceKey(source), source);
 	}
 
 	for (const source of localSources) {
-		merged.set(source.language.toLowerCase(), source);
+		merged.set(sourceKey(source), source);
 	}
 
 	return Array.from(merged.values());
@@ -554,6 +570,8 @@ async function performSync(showNotifications: boolean = true, forceRefresh: bool
 		return;
 	}
 
+	const session: SyncSession = { confirmAll: false };
+
 	for (const workspaceFolder of workspaceFolders) {
 		const detectedLanguages = await detectWorkspaceLanguage(workspaceFolder);
 
@@ -561,7 +579,7 @@ async function performSync(showNotifications: boolean = true, forceRefresh: bool
 			continue;
 		}
 
-		// Find matching source configurations
+		// Find and sync all matching source configurations
 		for (const source of sources) {
 			if (source.enabled === false) {
 				continue;
@@ -573,9 +591,7 @@ async function performSync(showNotifications: boolean = true, forceRefresh: bool
 			);
 
 			if (matchingLanguage) {
-				await syncInstructions(workspaceFolder, source, showNotifications);
-				// Only sync the first matching source per workspace folder
-				break;
+				await syncInstructions(workspaceFolder, source, showNotifications, true, session);
 			}
 		}
 	}
@@ -702,3 +718,7 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() { }
+
+// Exported for testing
+export { getDestinationPath, isGitHubUrl, isAzureDevOpsUrl, isLocalPath, isValidInstructionContent };
+export type { InstructionSource, RemoteConfig, SyncSession };

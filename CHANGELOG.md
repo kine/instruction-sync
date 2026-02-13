@@ -4,6 +4,18 @@ All notable changes to the "instruction-sync" extension will be documented in th
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.10] - 2026-02-13
+
+### Added
+
+- Support for multiple instruction sources per language — configure different destination files for each source
+- "Yes to All" option in confirmation dialog to approve all remaining syncs in the current session
+
+### Changed
+
+- Source merging now uses a composite key (language + destination path) instead of language alone
+- All matching sources for a detected language are synced, not just the first match
+
 ## [0.0.6] - 2026-01-20
 
 ### Changed
