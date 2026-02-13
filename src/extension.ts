@@ -25,6 +25,13 @@ interface SyncSession {
 }
 
 /**
+ * Global sync lock to prevent concurrent performSync calls from
+ * showing interleaved confirmation dialogs. If a sync is already
+ * running, subsequent calls wait for it to finish.
+ */
+let activeSyncPromise: Promise<void> | null = null;
+
+/**
  * Gets the destination path for the instructions file from source configuration
  */
 function getDestinationPath(source?: InstructionSource): { folder: string; file: string; fullPath: string } {
@@ -564,9 +571,28 @@ async function getInstructionSources(forceRefresh: boolean = false): Promise<Ins
 }
 
 /**
- * Main sync function that checks workspace languages and syncs matching instructions
+ * Main sync function that checks workspace languages and syncs matching instructions.
+ * Uses a global lock to ensure only one sync runs at a time, preventing interleaved
+ * confirmation dialogs from concurrent triggers (syncOnOpen, configWatcher, manual).
  */
-async function performSync(showNotifications: boolean = true, forceRefresh: boolean = false): Promise<void> {
+function performSync(showNotifications: boolean = true, forceRefresh: boolean = false): Promise<void> {
+	const doSync = async () => {
+		await performSyncInternal(showNotifications, forceRefresh);
+	};
+
+	// Chain onto any active sync so calls are serialized, not interleaved
+	const chained = (activeSyncPromise ?? Promise.resolve()).then(doSync, doSync);
+	activeSyncPromise = chained.finally(() => {
+		// Only clear if we're still the latest in the chain
+		if (activeSyncPromise === chained) {
+			activeSyncPromise = null;
+		}
+	});
+
+	return activeSyncPromise;
+}
+
+async function performSyncInternal(showNotifications: boolean, forceRefresh: boolean): Promise<void> {
 	const workspaceFolders = vscode.workspace.workspaceFolders;
 	if (!workspaceFolders || workspaceFolders.length === 0) {
 		if (showNotifications) {
@@ -642,8 +668,9 @@ export function activate(context: vscode.ExtensionContext) {
 		);
 
 		if (picked) {
+			const session: SyncSession = { confirmAll: false };
 			for (const workspaceFolder of workspaceFolders) {
-				await syncInstructions(workspaceFolder, picked.source, true);
+				await syncInstructions(workspaceFolder, picked.source, true, true, session);
 			}
 		}
 	});
