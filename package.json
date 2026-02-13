@@ -43,11 +43,27 @@
         "command": "kine-instruction-sync.addSource",
         "title": "Add Instruction Source",
         "category": "Instruction Sync"
+      },
+      {
+        "command": "kine-instruction-sync.setRemoteConfig",
+        "title": "Set Remote Configuration URL",
+        "category": "Instruction Sync"
       }
     ],
     "configuration": {
       "title": "Instruction Sync",
       "properties": {
+        "instructionSync.remoteConfigUrl": {
+          "type": "string",
+          "default": "",
+          "description": "URL to a remote JSON configuration file containing instruction sources. When set, sources are fetched from this URL instead of (or in addition to) local settings. The remote file should contain a JSON object with a 'sources' array matching the instructionSync.sources schema.",
+          "format": "uri"
+        },
+        "instructionSync.remoteConfigCacheDuration": {
+          "type": "number",
+          "default": 3600,
+          "description": "How long (in seconds) to cache the remote configuration before re-fetching. Set to 0 to always fetch fresh. Default: 3600 (1 hour)."
+        },
         "instructionSync.sources": {
           "type": "array",
           "default": [],

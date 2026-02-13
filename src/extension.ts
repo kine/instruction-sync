@@ -9,6 +9,16 @@ interface InstructionSource {
 	destinationFile?: string;
 }
 
+interface RemoteConfig {
+	sources?: InstructionSource[];
+	syncOnOpen?: boolean;
+	syncOnConfigChange?: boolean;
+	confirmBeforeSync?: boolean;
+}
+
+/** In-memory cache for remote configuration */
+let remoteConfigCache: { config: RemoteConfig; timestamp: number } | null = null;
+
 /**
  * Gets the destination path for the instructions file from source configuration
  */
@@ -424,15 +434,108 @@ async function syncInstructions(
 /**
  * Gets the instruction sources from configuration
  */
-function getInstructionSources(): InstructionSource[] {
+function getLocalInstructionSources(): InstructionSource[] {
 	const config = vscode.workspace.getConfiguration('instructionSync');
 	return config.get<InstructionSource[]>('sources', []);
 }
 
 /**
+ * Fetches and parses the remote configuration file.
+ * Uses an in-memory cache to avoid fetching on every sync.
+ */
+async function fetchRemoteConfig(forceRefresh: boolean = false): Promise<RemoteConfig | null> {
+	const config = vscode.workspace.getConfiguration('instructionSync');
+	const remoteConfigUrl = config.get<string>('remoteConfigUrl', '');
+
+	if (!remoteConfigUrl) {
+		return null;
+	}
+
+	const cacheDuration = config.get<number>('remoteConfigCacheDuration', 3600) * 1000; // convert to ms
+
+	// Check cache
+	if (!forceRefresh && remoteConfigCache && cacheDuration > 0) {
+		const age = Date.now() - remoteConfigCache.timestamp;
+		if (age < cacheDuration) {
+			return remoteConfigCache.config;
+		}
+	}
+
+	try {
+		const content = await fetchContent(remoteConfigUrl);
+		const parsed = JSON.parse(content);
+
+		// Validate the structure
+		const remoteConf: RemoteConfig = {};
+
+		if (Array.isArray(parsed.sources)) {
+			remoteConf.sources = parsed.sources.filter((s: unknown) => {
+				if (typeof s !== 'object' || s === null) { return false; }
+				const obj = s as Record<string, unknown>;
+				return typeof obj.language === 'string' && typeof obj.url === 'string';
+			});
+		}
+
+		if (typeof parsed.syncOnOpen === 'boolean') {
+			remoteConf.syncOnOpen = parsed.syncOnOpen;
+		}
+		if (typeof parsed.syncOnConfigChange === 'boolean') {
+			remoteConf.syncOnConfigChange = parsed.syncOnConfigChange;
+		}
+		if (typeof parsed.confirmBeforeSync === 'boolean') {
+			remoteConf.confirmBeforeSync = parsed.confirmBeforeSync;
+		}
+
+		// Update cache
+		remoteConfigCache = { config: remoteConf, timestamp: Date.now() };
+
+		return remoteConf;
+	} catch (error) {
+		const errorMessage = error instanceof Error ? error.message : String(error);
+		console.error(`Failed to fetch remote config from ${remoteConfigUrl}: ${errorMessage}`);
+		vscode.window.showErrorMessage(
+			`Instruction Sync: Failed to fetch remote configuration: ${errorMessage}`
+		);
+		// Return cached config if available, even if expired
+		return remoteConfigCache?.config ?? null;
+	}
+}
+
+/**
+ * Gets the merged instruction sources from both remote and local configuration.
+ * Remote sources are fetched first, then local sources are appended.
+ * Local sources can override remote ones for the same language.
+ */
+async function getInstructionSources(forceRefresh: boolean = false): Promise<InstructionSource[]> {
+	const localSources = getLocalInstructionSources();
+	const remoteConfig = await fetchRemoteConfig(forceRefresh);
+
+	if (!remoteConfig?.sources || remoteConfig.sources.length === 0) {
+		return localSources;
+	}
+
+	if (localSources.length === 0) {
+		return remoteConfig.sources;
+	}
+
+	// Merge: local sources override remote sources for the same language
+	const merged = new Map<string, InstructionSource>();
+
+	for (const source of remoteConfig.sources) {
+		merged.set(source.language.toLowerCase(), source);
+	}
+
+	for (const source of localSources) {
+		merged.set(source.language.toLowerCase(), source);
+	}
+
+	return Array.from(merged.values());
+}
+
+/**
  * Main sync function that checks workspace languages and syncs matching instructions
  */
-async function performSync(showNotifications: boolean = true): Promise<void> {
+async function performSync(showNotifications: boolean = true, forceRefresh: boolean = false): Promise<void> {
 	const workspaceFolders = vscode.workspace.workspaceFolders;
 	if (!workspaceFolders || workspaceFolders.length === 0) {
 		if (showNotifications) {
@@ -441,11 +544,11 @@ async function performSync(showNotifications: boolean = true): Promise<void> {
 		return;
 	}
 
-	const sources = getInstructionSources();
+	const sources = await getInstructionSources(forceRefresh);
 	if (sources.length === 0) {
 		if (showNotifications) {
 			vscode.window.showInformationMessage(
-				'Instruction Sync: No instruction sources configured. Add sources in settings.'
+				'Instruction Sync: No instruction sources configured. Add sources in settings or set a remote configuration URL.'
 			);
 		}
 		return;
@@ -494,7 +597,7 @@ export function activate(context: vscode.ExtensionContext) {
 			return;
 		}
 
-		const sources = getInstructionSources();
+		const sources = await getInstructionSources(true);
 		if (sources.length === 0) {
 			vscode.window.showWarningMessage('Instruction Sync: No instruction sources configured');
 			return;
@@ -543,6 +646,38 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.showInformationMessage(`Instruction Sync: Added source for ${language}`);
 	});
 
+	// Register command to set remote config URL
+	const setRemoteConfigCommand = vscode.commands.registerCommand('kine-instruction-sync.setRemoteConfig', async () => {
+		const config = vscode.workspace.getConfiguration('instructionSync');
+		const currentUrl = config.get<string>('remoteConfigUrl', '');
+
+		const url = await vscode.window.showInputBox({
+			prompt: 'Enter the URL to the remote configuration JSON file (leave empty to clear)',
+			placeHolder: 'https://raw.githubusercontent.com/org/repo/main/.copilot-sync-config.json',
+			value: currentUrl,
+			validateInput: (value) => {
+				if (value && !value.startsWith('http://') && !value.startsWith('https://') && !isLocalPath(value)) {
+					return 'Please enter a valid URL (http:// or https://) or a local file path';
+				}
+				return null;
+			}
+		});
+
+		if (url === undefined) {
+			return; // cancelled
+		}
+
+		await config.update('remoteConfigUrl', url || undefined, vscode.ConfigurationTarget.Global);
+		remoteConfigCache = null; // clear cache
+
+		if (url) {
+			vscode.window.showInformationMessage(`Instruction Sync: Remote configuration URL set. Syncing...`);
+			await performSync(true, true);
+		} else {
+			vscode.window.showInformationMessage('Instruction Sync: Remote configuration URL cleared.');
+		}
+	});
+
 	// Perform sync on activation (when workspace opens)
 	const config = vscode.workspace.getConfiguration('instructionSync');
 	const syncOnOpen = config.get<boolean>('syncOnOpen', true);
@@ -563,7 +698,7 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
-	context.subscriptions.push(syncCommand, forceSyncCommand, addSourceCommand, configWatcher);
+	context.subscriptions.push(syncCommand, forceSyncCommand, addSourceCommand, setRemoteConfigCommand, configWatcher);
 }
 
 export function deactivate() { }
