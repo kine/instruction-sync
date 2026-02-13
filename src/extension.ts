@@ -245,9 +245,20 @@ function isValidInstructionContent(content: string, source: string): { valid: bo
 }
 
 /**
- * Fetches content from a URL or local file path
+ * Options for content fetching
  */
-async function fetchContent(source: string): Promise<string> {
+interface FetchContentOptions {
+	/** If true, validates content as Markdown instructions (default: true) */
+	validateAsInstructions?: boolean;
+}
+
+/**
+ * Fetches content from a URL or local file path with authentication support
+ * for GitHub and Azure DevOps sources.
+ */
+async function fetchContent(source: string, options: FetchContentOptions = {}): Promise<string> {
+	const { validateAsInstructions = true } = options;
+
 	// Handle local file paths
 	if (isLocalPath(source)) {
 		try {
@@ -286,10 +297,12 @@ async function fetchContent(source: string): Promise<string> {
 
 	const content = await response.text();
 
-	// Validate the content to ensure it's not an error page
-	const validation = isValidInstructionContent(content, source);
-	if (!validation.valid) {
-		throw new Error(`Invalid content from ${source}: ${validation.reason}`);
+	// Validate the content to ensure it's not an error page (only for instruction files)
+	if (validateAsInstructions) {
+		const validation = isValidInstructionContent(content, source);
+		if (!validation.valid) {
+			throw new Error(`Invalid content from ${source}: ${validation.reason}`);
+		}
 	}
 
 	return content;
@@ -473,7 +486,9 @@ async function fetchRemoteConfig(forceRefresh: boolean = false): Promise<RemoteC
 	}
 
 	try {
-		const content = await fetchContent(remoteConfigUrl);
+		// Fetch remote config with authentication but skip Markdown-specific validation
+		// since this is a JSON config file, not instruction content
+		const content = await fetchContent(remoteConfigUrl, { validateAsInstructions: false });
 		const parsed = JSON.parse(content);
 
 		// Validate the structure
