@@ -116,6 +116,126 @@ Each source is uniquely identified by the combination of `language` + destinatio
 - Show confirmation dialog before overwriting local instructions
 - When multiple files are being synced, the confirmation dialog offers **"Yes to All"** to approve all remaining files in the current sync session
 
+### `instructionSync.syncSettingsOnOpen`
+
+- Type: `boolean`
+- Default: `true`
+- Automatically sync VS Code settings from remote configuration when a workspace is opened
+
+### `instructionSync.settingsBlacklist`
+
+- Type: `array` of strings
+- Default: Security-sensitive settings are blocked by default
+- List of setting patterns that should never be synced from remote configuration
+- Supports wildcards (`*`) at the end of patterns (e.g., `terminal.integrated.env.*`)
+
+Default blacklisted patterns:
+
+- `terminal.integrated.env.*`
+- `terminal.integrated.shellArgs.*`
+- `terminal.integrated.automationProfile.*`
+- `terminal.integrated.defaultProfile.*`
+- `terminal.integrated.profiles.*`
+- `security.*`
+- `remote.*`
+- `extensions.autoUpdate`
+- `extensions.autoCheckUpdates`
+- `update.*`
+
+## VS Code Settings Sync
+
+In addition to syncing Copilot instructions, this extension can also sync VS Code settings from your remote configuration. This allows teams to maintain consistent editor settings across all developers.
+
+### Remote Configuration Schema
+
+Your remote configuration JSON file can include a `settings` array alongside `sources`:
+
+```json
+{
+  "sources": [
+    { "language": "TypeScript", "url": "https://example.com/ts-instructions.md" }
+  ],
+  "settings": [
+    {
+      "scope": "workspace",
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2
+      }
+    },
+    {
+      "language": "TypeScript",
+      "scope": "workspace",
+      "settings": {
+        "typescript.tsdk": "node_modules/typescript/lib",
+        "[typescript].editor.formatOnSave": true
+      }
+    },
+    {
+      "scope": "user",
+      "settings": {
+        "editor.fontSize": 14
+      }
+    }
+  ]
+}
+```
+
+### Settings Configuration Properties
+
+Each settings entry supports:
+
+| Property | Required | Description |
+|----------|----------|-------------|
+| `scope` | Yes | `"user"` for global settings, `"workspace"` for workspace-specific |
+| `settings` | Yes | Object containing VS Code setting key-value pairs |
+| `language` | No | Optional language filter — settings only apply when this language is detected |
+
+### Scope Behavior
+
+- **`user`**: Settings are applied to your global VS Code user settings (applies across all workspaces)
+- **`workspace`**: Settings are applied to the current workspace's `.vscode/settings.json`
+
+### Language Filtering
+
+Settings with a `language` property only apply when that language is detected in the workspace:
+
+```json
+{
+  "settings": [
+    {
+      "language": "Python",
+      "scope": "workspace",
+      "settings": {
+        "python.linting.enabled": true,
+        "python.formatting.provider": "black"
+      }
+    }
+  ]
+}
+```
+
+Settings without a `language` property apply to all workspaces regardless of detected languages.
+
+### Security
+
+For security reasons, certain sensitive settings are blocked by default and cannot be synced remotely:
+
+- Terminal environment and shell settings
+- Security and trust settings
+- Remote connection settings
+- Extension auto-update settings
+
+You can customize the blacklist via `instructionSync.settingsBlacklist`.
+
+### Confirmation Dialog
+
+Before applying settings, a confirmation dialog shows all changes that will be made:
+
+- Old values vs new values for each setting
+- Which scope (user/workspace) each change applies to
+- Option to apply or cancel
+
 ## Commands
 
 Access these commands via the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`):
@@ -125,6 +245,7 @@ Access these commands via the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`):
 | `Instruction Sync: Sync Copilot Instructions` | Sync instructions based on detected workspace language |
 | `Instruction Sync: Force Sync Copilot Instructions (Select Source)` | Choose a specific source to sync from |
 | `Instruction Sync: Add Instruction Source` | Add a new language/URL source via guided input |
+| `Instruction Sync: Set Remote Configuration URL` | Configure the URL for centralized remote configuration |
 
 ## Supported Languages
 
@@ -160,6 +281,17 @@ The extension can detect the following languages:
 - Network access to the configured instruction URLs
 
 ## Release Notes
+
+### 0.0.13 (Unreleased)
+
+- **VS Code Settings Sync**: Sync VS Code settings from remote configuration
+  - Apply settings to user scope (global) or workspace scope
+  - Optional language filtering for language-specific settings
+  - Security blacklist prevents syncing sensitive settings (terminal, security, remote, etc.)
+  - Confirmation dialog shows all changes before applying
+- New configuration options:
+  - `instructionSync.syncSettingsOnOpen`: Enable/disable settings sync on workspace open
+  - `instructionSync.settingsBlacklist`: Customize which settings patterns are blocked
 
 ### 0.0.10
 

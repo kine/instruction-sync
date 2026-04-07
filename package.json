@@ -116,6 +116,30 @@
           "type": "boolean",
           "default": true,
           "description": "Show confirmation dialog before overwriting local instructions"
+        },
+        "instructionSync.syncSettingsOnOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically sync VS Code settings from remote configuration when a workspace is opened"
+        },
+        "instructionSync.settingsBlacklist": {
+          "type": "array",
+          "default": [
+            "terminal.integrated.env.*",
+            "terminal.integrated.shellArgs.*",
+            "terminal.integrated.automationProfile.*",
+            "terminal.integrated.defaultProfile.*",
+            "terminal.integrated.profiles.*",
+            "security.*",
+            "remote.*",
+            "extensions.autoUpdate",
+            "extensions.autoCheckUpdates",
+            "update.*"
+          ],
+          "description": "List of setting patterns that should never be synced from remote configuration. Supports wildcards (*) at the end of patterns.",
+          "items": {
+            "type": "string"
+          }
         }
       }
     }

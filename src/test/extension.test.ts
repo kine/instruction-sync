@@ -6,8 +6,13 @@ import {
 	isAzureDevOpsUrl,
 	isLocalPath,
 	isValidInstructionContent,
+	isSettingAllowed,
+	filterBlacklistedSettings,
+	getApplicableSettings,
+	deepEqual,
+	formatValue,
 } from '../extension';
-import type { InstructionSource, SyncSession } from '../extension';
+import type { InstructionSource, SyncSession, SettingsConfig } from '../extension';
 
 suite('getDestinationPath', () => {
 	test('returns defaults when no source provided', () => {
@@ -369,5 +374,195 @@ suite('Source merge logic (remote + local)', () => {
 
 		const result = Array.from(merged.values());
 		assert.strictEqual(result.length, 4, 'All unique language+destination combos should be preserved');
+	});
+});
+
+// ============================================================================
+// Settings Sync Tests
+// ============================================================================
+
+suite('isSettingAllowed', () => {
+	test('blocks terminal.integrated.env.* settings', () => {
+		assert.strictEqual(isSettingAllowed('terminal.integrated.env.PATH'), false);
+		assert.strictEqual(isSettingAllowed('terminal.integrated.env.HOME'), false);
+	});
+
+	test('blocks security.* settings', () => {
+		assert.strictEqual(isSettingAllowed('security.workspace.trust.enabled'), false);
+		assert.strictEqual(isSettingAllowed('security.restrictedMode.enabled'), false);
+	});
+
+	test('blocks remote.* settings', () => {
+		assert.strictEqual(isSettingAllowed('remote.autoForwardPorts'), false);
+	});
+
+	test('blocks exact match settings', () => {
+		assert.strictEqual(isSettingAllowed('extensions.autoUpdate'), false);
+		assert.strictEqual(isSettingAllowed('extensions.autoCheckUpdates'), false);
+	});
+
+	test('allows safe editor settings', () => {
+		assert.strictEqual(isSettingAllowed('editor.fontSize'), true);
+		assert.strictEqual(isSettingAllowed('editor.formatOnSave'), true);
+		assert.strictEqual(isSettingAllowed('editor.tabSize'), true);
+	});
+
+	test('allows workbench settings', () => {
+		assert.strictEqual(isSettingAllowed('workbench.colorTheme'), true);
+		assert.strictEqual(isSettingAllowed('workbench.iconTheme'), true);
+	});
+
+	test('allows language-specific settings', () => {
+		assert.strictEqual(isSettingAllowed('[typescript].editor.formatOnSave'), true);
+		assert.strictEqual(isSettingAllowed('typescript.tsdk'), true);
+	});
+});
+
+suite('filterBlacklistedSettings', () => {
+	test('removes blacklisted settings from config', () => {
+		const configs: SettingsConfig[] = [
+			{
+				scope: 'user',
+				settings: {
+					'editor.fontSize': 14,
+					'terminal.integrated.env.PATH': '/custom/path',
+					'editor.tabSize': 4,
+				},
+			},
+		];
+
+		const filtered = filterBlacklistedSettings(configs);
+		assert.strictEqual(filtered.length, 1);
+		assert.strictEqual(Object.keys(filtered[0].settings).length, 2);
+		assert.strictEqual(filtered[0].settings['editor.fontSize'], 14);
+		assert.strictEqual(filtered[0].settings['editor.tabSize'], 4);
+		assert.strictEqual(filtered[0].settings['terminal.integrated.env.PATH'], undefined);
+	});
+
+	test('removes config entirely if all settings are blacklisted', () => {
+		const configs: SettingsConfig[] = [
+			{
+				scope: 'user',
+				settings: {
+					'terminal.integrated.env.PATH': '/custom/path',
+					'security.workspace.trust.enabled': false,
+				},
+			},
+		];
+
+		const filtered = filterBlacklistedSettings(configs);
+		assert.strictEqual(filtered.length, 0);
+	});
+
+	test('preserves language field', () => {
+		const configs: SettingsConfig[] = [
+			{
+				language: 'TypeScript',
+				scope: 'workspace',
+				settings: { 'editor.formatOnSave': true },
+			},
+		];
+
+		const filtered = filterBlacklistedSettings(configs);
+		assert.strictEqual(filtered[0].language, 'TypeScript');
+		assert.strictEqual(filtered[0].scope, 'workspace');
+	});
+});
+
+suite('getApplicableSettings', () => {
+	test('returns all settings with no language filter', () => {
+		const settings: SettingsConfig[] = [
+			{ scope: 'user', settings: { 'editor.fontSize': 14 } },
+			{ scope: 'workspace', settings: { 'editor.tabSize': 4 } },
+		];
+
+		const result = getApplicableSettings(settings, ['TypeScript', 'JavaScript']);
+		assert.strictEqual(result.length, 2);
+	});
+
+	test('filters by language when specified', () => {
+		const settings: SettingsConfig[] = [
+			{ language: 'TypeScript', scope: 'workspace', settings: { 'typescript.tsdk': 'node_modules/typescript/lib' } },
+			{ language: 'Python', scope: 'workspace', settings: { 'python.pythonPath': '/usr/bin/python3' } },
+			{ scope: 'user', settings: { 'editor.fontSize': 14 } },
+		];
+
+		const result = getApplicableSettings(settings, ['TypeScript']);
+		assert.strictEqual(result.length, 2); // TypeScript config + no-language config
+	});
+
+	test('language matching is case-insensitive', () => {
+		const settings: SettingsConfig[] = [
+			{ language: 'typescript', scope: 'workspace', settings: { 'typescript.tsdk': 'lib' } },
+		];
+
+		const result = getApplicableSettings(settings, ['TypeScript']);
+		assert.strictEqual(result.length, 1);
+	});
+
+	test('returns empty array if no languages match', () => {
+		const settings: SettingsConfig[] = [
+			{ language: 'Python', scope: 'workspace', settings: { 'python.pythonPath': '/usr/bin/python3' } },
+		];
+
+		const result = getApplicableSettings(settings, ['TypeScript', 'JavaScript']);
+		assert.strictEqual(result.length, 0);
+	});
+});
+
+suite('deepEqual', () => {
+	test('primitive equality', () => {
+		assert.strictEqual(deepEqual(1, 1), true);
+		assert.strictEqual(deepEqual('hello', 'hello'), true);
+		assert.strictEqual(deepEqual(true, true), true);
+		assert.strictEqual(deepEqual(1, 2), false);
+		assert.strictEqual(deepEqual('hello', 'world'), false);
+	});
+
+	test('null handling', () => {
+		assert.strictEqual(deepEqual(null, null), true);
+		assert.strictEqual(deepEqual(null, undefined), false);
+		assert.strictEqual(deepEqual(null, {}), false);
+	});
+
+	test('object equality', () => {
+		assert.strictEqual(deepEqual({ a: 1 }, { a: 1 }), true);
+		assert.strictEqual(deepEqual({ a: 1, b: 2 }, { a: 1, b: 2 }), true);
+		assert.strictEqual(deepEqual({ a: 1 }, { a: 2 }), false);
+		assert.strictEqual(deepEqual({ a: 1 }, { a: 1, b: 2 }), false);
+	});
+
+	test('nested object equality', () => {
+		assert.strictEqual(deepEqual({ a: { b: 1 } }, { a: { b: 1 } }), true);
+		assert.strictEqual(deepEqual({ a: { b: 1 } }, { a: { b: 2 } }), false);
+	});
+
+	test('array equality (as objects)', () => {
+		assert.strictEqual(deepEqual([1, 2, 3], [1, 2, 3]), true);
+		assert.strictEqual(deepEqual([1, 2], [1, 2, 3]), false);
+	});
+});
+
+suite('formatValue', () => {
+	test('formats undefined as (not set)', () => {
+		assert.strictEqual(formatValue(undefined), '(not set)');
+	});
+
+	test('formats strings with quotes', () => {
+		assert.strictEqual(formatValue('hello'), '"hello"');
+	});
+
+	test('formats numbers as strings', () => {
+		assert.strictEqual(formatValue(14), '14');
+	});
+
+	test('formats booleans as strings', () => {
+		assert.strictEqual(formatValue(true), 'true');
+		assert.strictEqual(formatValue(false), 'false');
+	});
+
+	test('formats objects as JSON', () => {
+		const result = formatValue({ a: 1 });
+		assert.strictEqual(result, '{"a":1}');
 	});
 });

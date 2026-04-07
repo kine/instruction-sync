@@ -9,8 +9,31 @@ interface InstructionSource {
 	destinationFile?: string;
 }
 
+/**
+ * Configuration for syncing VS Code settings from remote config
+ */
+interface SettingsConfig {
+	/** Optional language filter - if set, settings only apply when this language is detected */
+	language?: string;
+	/** Target scope: 'user' for global settings, 'workspace' for workspace-specific */
+	scope: 'user' | 'workspace';
+	/** Key-value pairs of VS Code settings to apply */
+	settings: Record<string, unknown>;
+}
+
+/**
+ * Represents a single setting change to be applied
+ */
+interface SettingChange {
+	key: string;
+	oldValue: unknown;
+	newValue: unknown;
+	scope: 'user' | 'workspace';
+}
+
 interface RemoteConfig {
 	sources?: InstructionSource[];
+	settings?: SettingsConfig[];
 	syncOnOpen?: boolean;
 	syncOnConfigChange?: boolean;
 	confirmBeforeSync?: boolean;
@@ -519,6 +542,20 @@ async function fetchRemoteConfig(forceRefresh: boolean = false): Promise<RemoteC
 			remoteConf.confirmBeforeSync = parsed.confirmBeforeSync;
 		}
 
+		// Parse settings array
+		if (Array.isArray(parsed.settings)) {
+			remoteConf.settings = parsed.settings.filter((s: unknown) => {
+				if (typeof s !== 'object' || s === null) { return false; }
+				const obj = s as Record<string, unknown>;
+				// Must have scope ('user' or 'workspace') and settings object
+				if (obj.scope !== 'user' && obj.scope !== 'workspace') { return false; }
+				if (typeof obj.settings !== 'object' || obj.settings === null) { return false; }
+				// Language is optional
+				if (obj.language !== undefined && typeof obj.language !== 'string') { return false; }
+				return true;
+			}) as SettingsConfig[];
+		}
+
 		// Update cache
 		remoteConfigCache = { config: remoteConf, timestamp: Date.now() };
 
@@ -571,6 +608,311 @@ async function getInstructionSources(forceRefresh: boolean = false): Promise<Ins
 }
 
 /**
+ * Default blacklist patterns for settings that should never be synced remotely.
+ * These are security-sensitive or could cause issues if changed remotely.
+ */
+const DEFAULT_SETTINGS_BLACKLIST = [
+	'terminal.integrated.env.*',
+	'terminal.integrated.shellArgs.*',
+	'terminal.integrated.automationProfile.*',
+	'terminal.integrated.defaultProfile.*',
+	'terminal.integrated.profiles.*',
+	'security.*',
+	'remote.*',
+	'extensions.autoUpdate',
+	'extensions.autoCheckUpdates',
+	'update.*'
+];
+
+/**
+ * Checks if a setting key is allowed to be synced (not blacklisted).
+ * @param settingKey The VS Code setting key to check
+ * @returns true if the setting is allowed, false if it's blacklisted
+ */
+function isSettingAllowed(settingKey: string): boolean {
+	const config = vscode.workspace.getConfiguration('instructionSync');
+	const userBlacklist = config.get<string[]>('settingsBlacklist', []);
+
+	// Combine default and user blacklist
+	const blacklist = [...DEFAULT_SETTINGS_BLACKLIST, ...userBlacklist];
+
+	for (const pattern of blacklist) {
+		// Convert glob-like pattern to regex
+		// Support wildcard (*) at the end of patterns
+		if (pattern.endsWith('.*')) {
+			const prefix = pattern.slice(0, -2);
+			if (settingKey === prefix || settingKey.startsWith(prefix + '.')) {
+				return false;
+			}
+		} else if (pattern.endsWith('*')) {
+			const prefix = pattern.slice(0, -1);
+			if (settingKey.startsWith(prefix)) {
+				return false;
+			}
+		} else {
+			// Exact match
+			if (settingKey === pattern) {
+				return false;
+			}
+		}
+	}
+
+	return true;
+}
+
+/**
+ * Filters settings configurations to remove blacklisted settings.
+ * @param settingsConfigs Array of settings configurations from remote config
+ * @returns Filtered array with blacklisted settings removed
+ */
+function filterBlacklistedSettings(settingsConfigs: SettingsConfig[]): SettingsConfig[] {
+	return settingsConfigs.map(config => {
+		const filteredSettings: Record<string, unknown> = {};
+		for (const [key, value] of Object.entries(config.settings)) {
+			if (isSettingAllowed(key)) {
+				filteredSettings[key] = value;
+			} else {
+				console.log(`Instruction Sync: Blocked blacklisted setting: ${key}`);
+			}
+		}
+		return {
+			...config,
+			settings: filteredSettings
+		};
+	}).filter(config => Object.keys(config.settings).length > 0);
+}
+
+/**
+ * Gets settings configurations that apply to the detected languages.
+ * @param allSettings All settings from remote config
+ * @param detectedLanguages Languages detected in the workspace
+ * @returns Settings that either have no language filter or match a detected language
+ */
+function getApplicableSettings(
+	allSettings: SettingsConfig[],
+	detectedLanguages: string[]
+): SettingsConfig[] {
+	return allSettings.filter(config => {
+		// If no language specified, setting applies to all workspaces
+		if (!config.language) {
+			return true;
+		}
+		// Check if the setting's language matches any detected language (case-insensitive)
+		return detectedLanguages.some(
+			lang => lang.toLowerCase() === config.language!.toLowerCase()
+		);
+	});
+}
+
+/**
+ * Computes the changes that would be made by applying settings.
+ * @param settingsConfigs Settings to apply
+ * @returns Array of changes with old and new values
+ */
+async function computeSettingsChanges(settingsConfigs: SettingsConfig[]): Promise<SettingChange[]> {
+	const changes: SettingChange[] = [];
+
+	for (const config of settingsConfigs) {
+		for (const [key, newValue] of Object.entries(config.settings)) {
+			// Get the section and property name
+			const lastDotIndex = key.lastIndexOf('.');
+			const section = lastDotIndex > 0 ? key.substring(0, lastDotIndex) : '';
+			const property = lastDotIndex > 0 ? key.substring(lastDotIndex + 1) : key;
+
+			const vsConfig = vscode.workspace.getConfiguration(section);
+			const inspected = vsConfig.inspect(property);
+
+			// Get current value based on scope
+			const currentValue = config.scope === 'user'
+				? inspected?.globalValue
+				: inspected?.workspaceValue;
+
+			// Only include if value is different
+			if (!deepEqual(currentValue, newValue)) {
+				changes.push({
+					key,
+					oldValue: currentValue,
+					newValue,
+					scope: config.scope
+				});
+			}
+		}
+	}
+
+	return changes;
+}
+
+/**
+ * Deep equality check for setting values
+ */
+function deepEqual(a: unknown, b: unknown): boolean {
+	if (a === b) { return true; }
+	if (a === null || b === null) { return false; }
+	if (typeof a !== typeof b) { return false; }
+
+	if (typeof a === 'object' && typeof b === 'object') {
+		const aObj = a as Record<string, unknown>;
+		const bObj = b as Record<string, unknown>;
+		const aKeys = Object.keys(aObj);
+		const bKeys = Object.keys(bObj);
+
+		if (aKeys.length !== bKeys.length) { return false; }
+
+		for (const key of aKeys) {
+			if (!bKeys.includes(key)) { return false; }
+			if (!deepEqual(aObj[key], bObj[key])) { return false; }
+		}
+		return true;
+	}
+
+	return false;
+}
+
+/**
+ * Formats a value for display in the confirmation dialog
+ */
+function formatValue(value: unknown): string {
+	if (value === undefined) {
+		return '(not set)';
+	}
+	if (typeof value === 'string') {
+		return `"${value}"`;
+	}
+	if (typeof value === 'object') {
+		return JSON.stringify(value);
+	}
+	return String(value);
+}
+
+/**
+ * Shows a confirmation dialog with the settings changes that will be made.
+ * @param changes The changes to display
+ * @returns true if user confirms, false otherwise
+ */
+async function showSettingsConfirmation(changes: SettingChange[]): Promise<boolean> {
+	if (changes.length === 0) {
+		return true;
+	}
+
+	// Group changes by scope for clearer display
+	const userChanges = changes.filter(c => c.scope === 'user');
+	const workspaceChanges = changes.filter(c => c.scope === 'workspace');
+
+	let message = `Instruction Sync: Apply ${changes.length} setting change(s)?\n\n`;
+
+	if (userChanges.length > 0) {
+		message += `User Settings (${userChanges.length}):\n`;
+		for (const change of userChanges.slice(0, 5)) {
+			message += `  • ${change.key}: ${formatValue(change.oldValue)} → ${formatValue(change.newValue)}\n`;
+		}
+		if (userChanges.length > 5) {
+			message += `  ... and ${userChanges.length - 5} more\n`;
+		}
+	}
+
+	if (workspaceChanges.length > 0) {
+		if (userChanges.length > 0) { message += '\n'; }
+		message += `Workspace Settings (${workspaceChanges.length}):\n`;
+		for (const change of workspaceChanges.slice(0, 5)) {
+			message += `  • ${change.key}: ${formatValue(change.oldValue)} → ${formatValue(change.newValue)}\n`;
+		}
+		if (workspaceChanges.length > 5) {
+			message += `  ... and ${workspaceChanges.length - 5} more\n`;
+		}
+	}
+
+	const result = await vscode.window.showWarningMessage(
+		message.trim(),
+		{ modal: true },
+		'Apply Settings',
+		'Cancel'
+	);
+
+	return result === 'Apply Settings';
+}
+
+/**
+ * Applies the computed settings changes to VS Code configuration.
+ * @param changes The changes to apply
+ */
+async function applySettingsChanges(changes: SettingChange[]): Promise<void> {
+	for (const change of changes) {
+		const lastDotIndex = change.key.lastIndexOf('.');
+		const section = lastDotIndex > 0 ? change.key.substring(0, lastDotIndex) : '';
+		const property = lastDotIndex > 0 ? change.key.substring(lastDotIndex + 1) : change.key;
+
+		const vsConfig = vscode.workspace.getConfiguration(section);
+		const target = change.scope === 'user'
+			? vscode.ConfigurationTarget.Global
+			: vscode.ConfigurationTarget.Workspace;
+
+		await vsConfig.update(property, change.newValue, target);
+	}
+}
+
+/**
+ * Performs the settings sync from remote configuration.
+ * @param detectedLanguages Languages detected in the workspace
+ * @param showNotifications Whether to show notifications
+ * @returns Number of settings changed
+ */
+async function performSettingsSync(
+	detectedLanguages: string[],
+	showNotifications: boolean
+): Promise<number> {
+	const remoteConfig = await fetchRemoteConfig();
+
+	if (!remoteConfig?.settings || remoteConfig.settings.length === 0) {
+		return 0;
+	}
+
+	// Filter out blacklisted settings
+	const filteredSettings = filterBlacklistedSettings(remoteConfig.settings);
+
+	if (filteredSettings.length === 0) {
+		return 0;
+	}
+
+	// Get settings applicable to detected languages
+	const applicableSettings = getApplicableSettings(filteredSettings, detectedLanguages);
+
+	if (applicableSettings.length === 0) {
+		return 0;
+	}
+
+	// Compute what changes would be made
+	const changes = await computeSettingsChanges(applicableSettings);
+
+	if (changes.length === 0) {
+		if (showNotifications) {
+			vscode.window.showInformationMessage('Instruction Sync: Settings are already up to date');
+		}
+		return 0;
+	}
+
+	// Show confirmation dialog
+	const confirmed = await showSettingsConfirmation(changes);
+
+	if (!confirmed) {
+		if (showNotifications) {
+			vscode.window.showInformationMessage('Instruction Sync: Settings sync cancelled');
+		}
+		return 0;
+	}
+
+	// Apply the changes
+	await applySettingsChanges(changes);
+
+	if (showNotifications) {
+		vscode.window.showInformationMessage(
+			`Instruction Sync: Applied ${changes.length} setting change(s)`
+		);
+	}
+
+	return changes.length;
+}
+
+/**
  * Main sync function that checks workspace languages and syncs matching instructions.
  * Uses a global lock to ensure only one sync runs at a time, preventing interleaved
  * confirmation dialogs from concurrent triggers (syncOnOpen, configWatcher, manual).
@@ -602,39 +944,61 @@ async function performSyncInternal(showNotifications: boolean, forceRefresh: boo
 	}
 
 	const sources = await getInstructionSources(forceRefresh);
-	if (sources.length === 0) {
-		if (showNotifications) {
-			vscode.window.showInformationMessage(
-				'Instruction Sync: No instruction sources configured. Add sources in settings or set a remote configuration URL.'
-			);
-		}
-		return;
-	}
+
+	// Collect all detected languages across all workspace folders for settings sync
+	const allDetectedLanguages = new Set<string>();
 
 	const session: SyncSession = { confirmAll: false };
 
-	for (const workspaceFolder of workspaceFolders) {
-		const detectedLanguages = await detectWorkspaceLanguage(workspaceFolder);
+	// Sync instructions if sources are configured
+	if (sources.length > 0) {
+		for (const workspaceFolder of workspaceFolders) {
+			const detectedLanguages = await detectWorkspaceLanguage(workspaceFolder);
 
-		if (detectedLanguages.length === 0) {
-			continue;
-		}
-
-		// Find and sync all matching source configurations
-		for (const source of sources) {
-			if (source.enabled === false) {
+			if (detectedLanguages.length === 0) {
 				continue;
 			}
 
-			// Case-insensitive language matching
-			const matchingLanguage = detectedLanguages.find(
-				lang => lang.toLowerCase() === source.language.toLowerCase()
-			);
+			// Track all detected languages for settings sync
+			detectedLanguages.forEach(lang => allDetectedLanguages.add(lang));
 
-			if (matchingLanguage) {
-				await syncInstructions(workspaceFolder, source, showNotifications, true, session);
+			// Find and sync all matching source configurations
+			for (const source of sources) {
+				if (source.enabled === false) {
+					continue;
+				}
+
+				// Case-insensitive language matching
+				const matchingLanguage = detectedLanguages.find(
+					lang => lang.toLowerCase() === source.language.toLowerCase()
+				);
+
+				if (matchingLanguage) {
+					await syncInstructions(workspaceFolder, source, showNotifications, true, session);
+				}
 			}
 		}
+	} else {
+		// Even without sources, detect languages for settings sync
+		for (const workspaceFolder of workspaceFolders) {
+			const detectedLanguages = await detectWorkspaceLanguage(workspaceFolder);
+			detectedLanguages.forEach(lang => allDetectedLanguages.add(lang));
+		}
+	}
+
+	// Perform settings sync if enabled
+	const config = vscode.workspace.getConfiguration('instructionSync');
+	const syncSettingsOnOpen = config.get<boolean>('syncSettingsOnOpen', true);
+
+	if (syncSettingsOnOpen) {
+		await performSettingsSync(Array.from(allDetectedLanguages), showNotifications);
+	}
+
+	// Show message if no sources configured and no settings synced
+	if (sources.length === 0 && showNotifications) {
+		vscode.window.showInformationMessage(
+			'Instruction Sync: No instruction sources configured. Add sources in settings or set a remote configuration URL.'
+		);
 	}
 }
 
@@ -763,4 +1127,5 @@ export function deactivate() { }
 
 // Exported for testing
 export { getDestinationPath, isGitHubUrl, isAzureDevOpsUrl, isLocalPath, isValidInstructionContent };
-export type { InstructionSource, RemoteConfig, SyncSession };
+export { isSettingAllowed, filterBlacklistedSettings, getApplicableSettings, deepEqual, formatValue };
+export type { InstructionSource, RemoteConfig, SyncSession, SettingsConfig, SettingChange };
