@@ -69,7 +69,11 @@ jobs:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
       - name: Publish to Open VSX Registry
-        run: npx ovsx publish -p ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -n "$OVSX_PAT" ]; then
+            npx ovsx publish -p "$OVSX_PAT"
+          else
+            echo "OVSX_PAT not set, skipping Open VSX publish"
+          fi
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        continue-on-error: true
